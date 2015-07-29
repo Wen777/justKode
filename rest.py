@@ -1,32 +1,35 @@
 from pymongo import MongoClient
 from flask import Flask
 from docker import Client 
+import json
 
 cli = Client(base_url='unix://var/run/docker.sock')
 monCli = MongoClient('mongodb://localhost:27017/')
-jobDB = monCli['job']
+db = monCli['job']
 
 app = Flask(__name__)
 
 @app.route("/ping")
 def ping():
     msg = ""
-    jobCollection = jobDB.job
+    jobCollection = db.job
     jobData = jobCollection.find_one({ "$query":{}, "$orderby":{'createAt':-1} })
 
-    if jobData != None:
+    if jobData:
         msg = runContainer(jobData)
-    if msg != "":
-        return "python server received 'ping' request!"
+    if msg:
+        jobCollection.update({"_id":jobData["_id"]},{"$set":{"command":"done"}})
+        return json.dumps(msg)
     else:
-        assert "raise error, msg is empty string."
-        pass
+        assert "raise error, msg is empty dict."
+        return msg
 
 def runContainer(jobData):
     container = cli.create_container(image=jobData['image'])
-    #FIXME update job status
-    print(container)
-    return "Done"
+    if container:
+        return container
+    else:
+        return {"error":"error"}
 
 if __name__ == "__main__":
     app.run(debug=True)

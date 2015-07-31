@@ -5,32 +5,38 @@ import json
 
 cli = Client(base_url='unix://var/run/docker.sock')
 monCli = MongoClient('mongodb://localhost:27017/')
-db = monCli['job']
-
+db_rest = monCli['rest']
+db_meteor = monCli['meteor']
+freeports = set(range(8000,9001))
 app = Flask(__name__)
 
 @app.route("/ping")
 def ping():
     msg = ""
-    jobCollection = db.job
-    jobData = jobCollection.find_one({ "$query":{}, "$orderby":{'createAt':-1} })
+    jobData = db.job.find_one({ "$query":{}, "$orderby":{'createAt':-1} })
 
     if jobData:
         msg = runContainer(jobData)
     if msg:
-        jobCollection.update({"_id":jobData["_id"]},{"$set":{"command":"done"}})
+        db.job.update({"_id":jobData["_id"]},{"$set":{"command":"done"}})
         return json.dumps(msg)
     else:
         assert "raise error, msg is empty dict."
         return msg
 
-def runContainer(jobData):
+def run_container(jobData):
     container = cli.create_container(image=jobData['image'])
     if container:
         return container
     else:
         return {"error":"error"}
 
+def port_sync():
+    allContainer = cli.continaers()
+    usedPorts = sum(list(map(lambda x: x['Ports'], allContainer)), [])
+    freeports.difference_update(usedPorts)
+
 if __name__ == "__main__":
     app.run(debug=True)
+    portSync()
 
